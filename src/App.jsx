@@ -739,13 +739,15 @@ const TestPage = ({ t }) => {
   const [historyLoading, setHistoryLoading] = useState(true);
   const savedRef = useRef(false);
 
+  const STORAGE_KEY = "nihongo-sensei-test-history";
+
   useEffect(() => { loadHistory(); }, []);
 
-  const loadHistory = async () => {
+  const loadHistory = () => {
     setHistoryLoading(true);
     try {
-      const res = await window.storage.get("test-history");
-      const arr = res ? JSON.parse(res.value) : [];
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
       setHistory(Array.isArray(arr) ? arr : []);
     } catch {
       setHistory([]);
@@ -757,15 +759,19 @@ const TestPage = ({ t }) => {
   const saveResult = (result) => {
     setHistory(prev => {
       const updated = [...prev, result];
-      window.storage.set("test-history", JSON.stringify(updated)).catch(e => console.error("Failed to save result:", e));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {
+        console.error("Failed to save result:", e);
+      }
       return updated;
     });
   };
 
-  const clearHistory = async () => {
+  const clearHistory = () => {
     if (!window.confirm("Clear all test history? This cannot be undone.")) return;
     try {
-      await window.storage.delete("test-history");
+      localStorage.removeItem(STORAGE_KEY);
       setHistory([]);
     } catch (e) { console.error("Failed to clear history:", e); }
   };
