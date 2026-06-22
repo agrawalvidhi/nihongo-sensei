@@ -641,12 +641,12 @@ const CharactersPage = ({ t }) => {
 };
 
 // ===================== TEST PAGE =====================
-const TEST_SYSTEM = (level) => `You are a JLPT examiner. Generate a ${level} practice test with exactly 5 multiple-choice questions. Return ONLY raw JSON:
-{"level":"${level}","questions":[{"id":1,"question":"Question text","questionJP":"Question in Japanese if applicable","options":["A","B","C","D"],"correct":0,"explanation":"Why this is correct"}]}
-Make questions appropriate for ${level} difficulty. Vary: vocabulary, grammar, reading comprehension, kanji.`;
+const TEST_SYSTEM = (level) => `You are a JLPT examiner. Generate a ${level} practice test with exactly 3 multiple-choice questions. Return ONLY raw JSON with no markdown, no code fences, no explanation — just the JSON object:
+{"level":"${level}","questions":[{"id":1,"question":"Question text","questionJP":"Question in Japanese if applicable or empty string","options":["A","B","C","D"],"correct":0,"explanation":"Why this is correct"}]}
+Make questions appropriate for ${level} difficulty. Vary the types: vocabulary, grammar, kanji.`;
 
-const PAST_PAPER_SYSTEM = (level, year) => `You are a JLPT exam writer creating an AI-generated practice paper inspired by the difficulty, structure, and topic trends typical of the ${year} JLPT season for level ${level}. This is original practice material, not a reproduction of any real copyrighted exam. Generate exactly 10 multiple-choice questions covering a realistic mix of vocabulary, grammar, kanji recognition, and short reading comprehension, matched to authentic ${level} difficulty and the kind of themes/vocabulary common around ${year}. Return ONLY raw JSON:
-{"level":"${level}","year":"${year}","questions":[{"id":1,"question":"Question text in English instructions","questionJP":"Japanese question/passage if applicable","options":["A","B","C","D"],"correct":0,"explanation":"Why this is correct, in English"}]}`;
+const PAST_PAPER_SYSTEM = (level, year) => `You are a JLPT exam writer creating an AI-generated practice paper inspired by difficulty and topic trends typical of the ${year} JLPT season for level ${level}. This is original practice material, not a reproduction of any real copyrighted exam. Generate exactly 5 multiple-choice questions covering vocabulary, grammar, kanji recognition, and reading comprehension appropriate for ${level}. Return ONLY raw JSON with no markdown, no code fences, no explanation — just the JSON object:
+{"level":"${level}","year":"${year}","questions":[{"id":1,"question":"Question text","questionJP":"Japanese question or passage if applicable or empty string","options":["A","B","C","D"],"correct":0,"explanation":"Why this is correct"}]}`;
 
 const YEARS = Array.from({ length: 10 }, (_, i) => 2025 - i); // last 10 years: 2016–2025
 
@@ -832,8 +832,8 @@ const TestPage = ({ t }) => {
           <>
         <p style={{ fontSize: "12px", color: t.textMuted, fontFamily: t.fontBody, textAlign: "center", margin: "0", lineHeight: 1.6, maxWidth: "320px" }}>
           {mode === "quick"
-            ? "5 AI-generated questions tailored to your level"
-            : "10-question AI-generated paper styled after a chosen year's JLPT difficulty and themes — original practice material, not a reproduction of any real exam"}
+            ? "3 AI-generated questions tailored to your level"
+            : "5-question AI-generated paper styled after a chosen year's JLPT difficulty and themes — original practice material, not a reproduction of any real exam"}
         </p>
 
         {/* Year selector (past mode only) */}
@@ -955,9 +955,8 @@ const TestPage = ({ t }) => {
 };
 
 // ===================== RECOMMENDATIONS PAGE =====================
-const RECO_SYSTEM = (level) => `You are a Japanese learning expert. Give curated recommendations for a JLPT ${level} learner. Return ONLY raw JSON:
-{"level":"${level}","anime":[{"title":"...","why":"1-2 sentences on why it helps for ${level}","difficulty":"Easy/Medium/Hard","genre":"..."}],"books":[{"title":"...","why":"...","type":"Textbook/Manga/Novel/Graded Reader"}],"movies":[{"title":"...","why":"...","year":"...","genre":"..."}]}
-Include 3 items per category. Be specific and practical.`;
+const RECO_SYSTEM = (level) => `You are a Japanese learning expert. Give curated recommendations for a JLPT ${level} learner. Return ONLY raw JSON with no markdown, no code fences, no explanation — just the JSON object:
+{"level":"${level}","anime":[{"title":"...","why":"1-2 sentences on why it helps for ${level}","difficulty":"Easy/Medium/Hard","genre":"..."},{"title":"...","why":"...","difficulty":"...","genre":"..."},{"title":"...","why":"...","difficulty":"...","genre":"..."}],"books":[{"title":"...","why":"...","type":"Textbook/Manga/Novel/Graded Reader"},{"title":"...","why":"...","type":"..."},{"title":"...","why":"...","type":"..."}],"movies":[{"title":"...","why":"...","year":"...","genre":"..."},{"title":"...","why":"...","year":"...","genre":"..."},{"title":"...","why":"...","year":"...","genre":"..."}]}`;
 
 const RecommendationsPage = ({ t }) => {
   const [level, setLevel] = useState("N5");
@@ -1071,7 +1070,7 @@ const NAV_ITEMS = [
 ];
 
 const BottomNav = ({ page, setPage, t, onVibe }) => (
-  <div style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${t.border}`, background: t.navBg, backdropFilter: "blur(12px)", padding: "6px 0 10px", position: "relative", zIndex: 10 }}>
+  <div className="safe-bottom" style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${t.border}`, background: t.navBg, backdropFilter: "blur(12px)", padding: "6px 0 4px", position: "relative", zIndex: 10 }}>
     {NAV_ITEMS.map(item => (
       <button key={item.id} onClick={() => setPage(item.id)}
         style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "6px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
@@ -1111,18 +1110,26 @@ export default function App() {
   const t = THEMES[vibe];
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: t.bg, maxWidth: "480px", margin: "0 auto", position: "relative", overflow: "hidden" }}>
+    <div style={{
+      height: "100dvh",
+      display: "flex", flexDirection: "column",
+      background: t.bg,
+      width: "100%", maxWidth: "480px",
+      margin: "0 auto",
+      position: "relative",
+    }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Nunito:wght@400;600;700;800&family=Orbitron:wght@400;700;900&family=Kalam:wght@400;700&family=Quicksand:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
         @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         ::-webkit-scrollbar { width: 3px; }
         ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 2px; }
-        button { transition: opacity 0.15s; }
+        button { transition: opacity 0.15s; cursor: pointer; }
         button:active { opacity: 0.75; }
         textarea { resize: none; }
+        /* Safe area insets for iPhone notch / home indicator */
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
       `}</style>
 
       <Header page={page} t={t} />
