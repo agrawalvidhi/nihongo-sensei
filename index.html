@@ -9,6 +9,25 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
+    <style>
+      /* Reset so the app shell fills the exact visible screen on every device.
+         100dvh (dynamic viewport height) accounts for mobile browser chrome
+         (address bar, bottom nav) — falls back to 100vh on older browsers.
+         Without this, 100vh on iOS Safari overflows behind the toolbar. */
+      *, *::before, *::after { box-sizing: border-box; }
+      html { height: 100%; height: 100dvh; }
+      body {
+        margin: 0; padding: 0;
+        height: 100%; height: 100dvh;
+        overflow: hidden;
+        -webkit-text-size-adjust: 100%; /* prevent iOS font scaling on rotate */
+      }
+      #root {
+        height: 100%; height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
