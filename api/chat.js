@@ -1,12 +1,12 @@
-// This runs on Vercel's server, never in the user's browser.
-// Your GEMINI_API_KEY stays secret here and is never exposed to the client.
+// Vercel serverless function — API key stays server-side, never reaches the browser.
 //
-// Using Google's Gemini free tier (gemini-2.5-flash). Google changes free-tier
-// model names/limits periodically — if this model is ever retired, check
-// https://ai.google.dev/gemini-api/docs/pricing for the current free-tier list
-// and swap GEMINI_MODEL below. gemini-2.5-flash-lite is a higher-quota
-// alternative if you outgrow this model's daily request cap.
-const GEMINI_MODEL = "gemini-2.5-flash";
+// Model: gemini-2.0-flash
+//   - NOT a thinking model, so no hidden reasoning phase eating time/tokens
+//   - Typical response: 2–5 seconds — well within Vercel Hobby's 60s limit
+//   - Free tier: 1,500 requests/day, 1M tokens/min
+//   - If Google retires this model, swap GEMINI_MODEL for the current free-tier
+//     equivalent at https://ai.google.dev/gemini-api/docs/models
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -20,6 +20,10 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Combine system + user message into one prompt.
+  // Avoids system_instruction parsing quirks and works reliably across all Gemini models.
+  const fullPrompt = system ? `${system}\n\n---\n\n${message}` : message;
+
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
     const response = await fetch(url, {
@@ -29,30 +33,42 @@ export default async function handler(req, res) {
         "x-goog-api-key": process.env.GEMINI_API_KEY,
       },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: system || "" }] },
-        contents: [{ role: "user", parts: [{ text: message }] }],
+        contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
         generationConfig: {
-          maxOutputTokens: 1000,
-          // Forces clean JSON output — matches what all our prompts already ask for.
-          responseMimeType: "application/json",
+          // 2048 is enough for 5 questions + explanations and recommendations.
+          // responseMimeType intentionally omitted — it conflicts with fast models
+          // and our prompts already ask for raw JSON explicitly.
+          maxOutputTokens: 2048,
+          temperature: 0.7,
         },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      res.status(response.status).json({ error: "Gemini API error", detail: errText });
+      console.error("Gemini error:", response.status, errText);
+      res.status(response.status).json({
+        error: "Gemini API error",
+        status: response.status,
+        detail: errText,
+      });
       return;
     }
 
     const data = await response.json();
+
+    // Log finish reason so we can spot truncation in Vercel logs
+    const finishReason = data.candidates?.[0]?.finishReason;
+    if (finishReason && finishReason !== "STOP") {
+      console.warn("Gemini finish reason:", finishReason);
+    }
+
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
-    // Reshape into the same { content: [{ type: "text", text }] } format the
-    // frontend already expects (this used to come from Anthropic's API shape),
-    // so App.jsx needs zero changes when swapping providers.
+    // Reshape to { content: [{ type:"text", text }] } — the shape App.jsx already expects.
     res.status(200).json({ content: [{ type: "text", text }] });
   } catch (err) {
+    console.error("Handler error:", err);
     res.status(500).json({ error: "Failed to reach Gemini API", detail: String(err) });
   }
 }
