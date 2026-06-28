@@ -502,7 +502,7 @@ const buildChatSystem = (vibe) => {
   return `You are Sensei, a Japanese language tutor. ${cfg.tone} ${cfg.exampleGuidance}
 
 When given a word or phrase, return ONLY raw JSON (no markdown, no code fences):
-{"word":"Japanese form","reading":"hiragana reading","romaji":"romaji","english":"English meaning","partOfSpeech":"noun/verb/etc","jlptLevel":"N5/N4/N3/N2/N1 or null","explanation":"2-3 sentence explanation written in the tone described above","basicSentence":{"ja":"...","romaji":"...","en":"..."},"intermediateSentence":{"ja":"...","romaji":"...","en":"..."},"advancedSentence":{"ja":"...","romaji":"...","en":"..."},"vibeNote":"${cfg.noteInstruction}"}
+{"word":"Japanese form","reading":"hiragana reading","romaji":"romaji","english":"English meaning","partOfSpeech":"noun/verb/etc","jlptLevel":"N5/N4/N3/N2/N1 or null","explanation":"2-3 sentence explanation written in the tone described above","basicSentence":{"ja":"sentence in kanji+kana","kana":"same sentence in hiragana/katakana only — no kanji","romaji":"...","en":"..."},"intermediateSentence":{"ja":"...","kana":"hiragana/katakana only version","romaji":"...","en":"..."},"advancedSentence":{"ja":"...","kana":"hiragana/katakana only version","romaji":"...","en":"..."},"vibeNote":"${cfg.noteInstruction}"}
 
 For general conversation/questions not about a specific word, return:
 {"type":"message","text":"reply in English matching the tone above","japanese":"relevant Japanese if applicable","romaji":"romaji if included"}`;
@@ -514,6 +514,62 @@ const THEME_SUGGESTIONS = {
   anime: ["魔法","nakama","ツンデレ","強い","senpai","必殺技"],
   cultural: ["茶道","侍","花見","季節","おもてなし","祭り"],
   ghibli: ["風","森","旅","ふるさと","雲","魔法"],
+};
+
+// ===================== SENTENCE CARD =====================
+// Three-way script toggle per sentence: kanji+kana ↔ kana-only ↔ romaji
+const SCRIPT_MODES = [
+  { key: "ja",     label: "漢",  title: "Kanji + Kana",  hint: "Real Japanese" },
+  { key: "kana",   label: "か",  title: "Kana only",     hint: "No kanji" },
+  { key: "romaji", label: "A",   title: "Romaji",        hint: "Latin script" },
+];
+
+const SentenceCard = ({ label, s, t }) => {
+  const [mode, setMode] = useState(0); // 0=kanji, 1=kana, 2=romaji
+  const current = SCRIPT_MODES[mode];
+  const displayText = s[current.key] || s.ja; // fallback to ja if kana missing
+  const isJP = current.key !== "romaji";
+
+  return (
+    <div style={{ marginBottom: "10px", borderLeft: `2px solid ${t.accent}`, paddingLeft: "12px" }}>
+      {/* Row: label + toggle buttons */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
+        <div style={{ fontSize: "10px", color: t.accent, fontFamily: t.fontMono, letterSpacing: "0.08em" }}>{label}</div>
+        <div style={{ display: "flex", gap: "3px" }}>
+          {SCRIPT_MODES.map((m, i) => (
+            <button key={m.key} onClick={() => setMode(i)} title={`${m.title} — ${m.hint}`}
+              style={{
+                width: "24px", height: "20px",
+                borderRadius: "4px",
+                border: `1px solid ${mode === i ? t.accent : t.border}`,
+                background: mode === i ? t.accentSoft : "transparent",
+                color: mode === i ? t.accent : t.textMuted,
+                fontSize: "10px",
+                fontFamily: mode === i && i < 2 ? t.fontJP : t.fontMono,
+                fontWeight: mode === i ? "700" : "400",
+                cursor: "pointer",
+                lineHeight: 1,
+                padding: 0,
+                transition: "all 0.12s",
+              }}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Sentence text */}
+      <div
+        style={{ fontSize: "15px", color: t.text, fontFamily: isJP ? t.fontJP : t.fontMono, marginBottom: "4px", cursor: "pointer", lineHeight: 1.5 }}
+        onClick={() => speak(s.ja)}>
+        {displayText}
+        <span style={{ fontSize: "11px", opacity: 0.35, marginLeft: "4px" }}>🔊</span>
+      </div>
+
+      {/* English translation always visible below */}
+      <div style={{ fontSize: "12px", color: t.textMuted, fontStyle: "italic", fontFamily: t.fontBody }}>{s.en}</div>
+    </div>
+  );
 };
 
 const ChatMsg = ({ msg, t, vibe }) => {
@@ -562,14 +618,9 @@ const ChatMsg = ({ msg, t, vibe }) => {
         </div>
         <div style={{ fontSize: "17px", fontWeight: "700", color: t.text, fontFamily: t.fontDisplay, marginBottom: "8px" }}>{d.english}</div>
         <p style={{ fontSize: "13px", color: t.textMuted, lineHeight: 1.7, margin: "0 0 14px", fontFamily: t.fontBody }}>{d.explanation}</p>
-        {/* Sentences */}
+        {/* Sentences with script toggle */}
         {[{label:"BASIC", key:"basicSentence"},{label:"INTERMEDIATE", key:"intermediateSentence"},{label:"ADVANCED", key:"advancedSentence"}].map(({label,key}) => d[key] && (
-          <div key={key} style={{ marginBottom: "10px", borderLeft: `2px solid ${t.accent}`, paddingLeft: "12px" }}>
-            <div style={{ fontSize: "10px", color: t.accent, fontFamily: t.fontMono, letterSpacing: "0.08em", marginBottom: "4px" }}>{label}</div>
-            <div style={{ fontSize: "15px", color: t.text, fontFamily: t.fontJP, marginBottom: "2px", cursor: "pointer" }} onClick={() => speak(d[key].ja)}>{d[key].ja} <span style={{ fontSize: "11px", opacity: 0.4 }}>🔊</span></div>
-            <div style={{ fontSize: "11px", color: t.textMuted, fontFamily: t.fontMono }}>{d[key].romaji}</div>
-            <div style={{ fontSize: "12px", color: t.textMuted, fontStyle: "italic", fontFamily: t.fontBody }}>{d[key].en}</div>
-          </div>
+          <SentenceCard key={key} label={label} s={d[key]} t={t} />
         ))}
         {/* Theme-curated note */}
         {d.vibeNote && (
