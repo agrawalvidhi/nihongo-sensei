@@ -315,15 +315,117 @@ const speak = (text) => {
   window.speechSynthesis.speak(u);
 };
 
+// ===================== GEMINI DIRECT CALL =====================
+// Calls Gemini straight from the browser — no Vercel backend needed.
+// Gemini supports browser CORS natively. Key is stored in localStorage.
+const GEMINI_MODEL = "gemini-2.5-flash-lite";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const KEY_STORAGE = "nihongo-gemini-key";
+
 const callAPI = async (system, userMsg) => {
-  const res = await fetch("/api/chat", {
+  const key = localStorage.getItem(KEY_STORAGE);
+  if (!key) throw new Error("NO_KEY");
+  const fullPrompt = system ? `${system}\n\n---\n\n${userMsg}` : userMsg;
+  const res = await fetch(GEMINI_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, message: userMsg }),
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+      generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
+    }),
   });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData?.error?.message || `Gemini error HTTP ${res.status}`);
+  }
   const data = await res.json();
-  const text = data.content?.find(b => b.type === "text")?.text || "{}";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini returned empty response — try again");
   return text.replace(/```json|```/g, "").trim();
+};
+
+// ===================== SETUP SCREEN =====================
+const SetupScreen = ({ t, onSave }) => {
+  const [key, setKey] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | testing | error
+  const [errMsg, setErrMsg] = useState("");
+
+  const testAndSave = async () => {
+    const k = key.trim();
+    if (!k) return;
+    setStatus("testing"); setErrMsg("");
+    try {
+      const res = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": k },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "Reply with just: ok" }] }],
+          generationConfig: { maxOutputTokens: 10 },
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e?.error?.message || `HTTP ${res.status}`);
+      }
+      localStorage.setItem(KEY_STORAGE, k);
+      onSave();
+    } catch (err) {
+      setStatus("error");
+      setErrMsg(err.message);
+    }
+  };
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 24px", background: t.bg, textAlign: "center" }}>
+      <div style={{ fontSize: "48px", fontFamily: t.fontJP, color: t.text, opacity: 0.15, marginBottom: "16px" }}>語</div>
+      <h2 style={{ fontSize: "22px", fontFamily: t.fontDisplay, color: t.text, margin: "0 0 8px" }}>Welcome to Nihongo Sensei</h2>
+      <p style={{ fontSize: "13px", color: t.textMuted, fontFamily: t.fontBody, lineHeight: 1.7, margin: "0 0 28px", maxWidth: "320px" }}>
+        Enter your free Gemini API key to get started. Your key is stored only on this device — never sent to any server.
+      </p>
+
+      <div style={{ width: "100%", maxWidth: "340px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <input
+          type="password"
+          value={key}
+          onChange={e => { setKey(e.target.value); setStatus("idle"); }}
+          onKeyDown={e => e.key === "Enter" && testAndSave()}
+          placeholder="Paste your Gemini API key here"
+          style={{
+            padding: "14px 16px", borderRadius: t.cardRadius,
+            border: `1px solid ${status === "error" ? t.danger : t.border}`,
+            background: t.inputBg, color: t.text,
+            fontSize: "14px", fontFamily: t.fontMono,
+            outline: "none", width: "100%",
+          }}
+        />
+
+        <button onClick={testAndSave} disabled={!key.trim() || status === "testing"}
+          style={{
+            padding: "14px", background: key.trim() && status !== "testing" ? t.accent : t.border,
+            color: "#fff", border: "none", borderRadius: t.cardRadius,
+            fontSize: "15px", fontFamily: t.fontBody, fontWeight: "700",
+            cursor: key.trim() && status !== "testing" ? "pointer" : "not-allowed",
+          }}>
+          {status === "testing" ? "Testing key..." : "Connect & Start →"}
+        </button>
+
+        {status === "error" && (
+          <div style={{ padding: "12px", background: t.danger + "15", border: `1px solid ${t.danger}44`, borderRadius: t.cardRadius, fontSize: "12px", color: t.danger, fontFamily: t.fontBody, lineHeight: 1.5, textAlign: "left" }}>
+            <strong>Key failed:</strong> {errMsg}
+          </div>
+        )}
+
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: "12px", color: t.accent, fontFamily: t.fontBody, textDecoration: "none", marginTop: "4px" }}>
+          Get a free key at aistudio.google.com/apikey →
+        </a>
+
+        <p style={{ fontSize: "11px", color: t.textMuted, fontFamily: t.fontBody, margin: "8px 0 0", lineHeight: 1.6 }}>
+          Free tier: 1,500 requests/day · No credit card needed
+        </p>
+      </div>
+    </div>
+  );
 };
 
 // ===================== CHAR CARD =====================
@@ -798,8 +900,13 @@ const TestPage = ({ t }) => {
         ? await callAPI(TEST_SYSTEM(level), `Generate a ${level} test`)
         : await callAPI(PAST_PAPER_SYSTEM(level, year), `Generate a ${year} ${level} practice paper`);
       const data = JSON.parse(raw);
+      if (!data.questions?.length) throw new Error("No questions in response");
       setQuestions(data.questions); setAnswers({}); setCurrent(0); setState("testing");
-    } catch { setState("idle"); alert("Failed to generate test. Try again!"); }
+    } catch (err) {
+      console.error("Test generation failed:", err);
+      setState("idle");
+      alert(`Could not generate test: ${err.message}`);
+    }
   };
 
   const answer = (qId, idx) => {
@@ -967,9 +1074,13 @@ const RecommendationsPage = ({ t }) => {
     setLoading(true); setData(null);
     try {
       const raw = await callAPI(RECO_SYSTEM(l), `Recommend resources for ${l}`);
-      setData(JSON.parse(raw));
-    } catch { setData({ error: true }); }
-    finally { setLoading(false); }
+      const parsed = JSON.parse(raw);
+      if (!parsed.anime) throw new Error("Unexpected response shape");
+      setData(parsed);
+    } catch (err) {
+      console.error("Recommendations failed:", err);
+      setData({ error: true, message: err.message });
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { load(level); }, []);
@@ -1028,7 +1139,12 @@ const RecommendationsPage = ({ t }) => {
             <Section icon="🎬" title="MOVIES" items={data.movies} typeField="genre" />
           </>
         )}
-        {data?.error && <div style={{ textAlign: "center", color: t.danger, fontFamily: t.fontBody, padding: "40px" }}>Failed to load. Try refreshing.</div>}
+        {data?.error && <div style={{ textAlign: "center", color: t.danger, fontFamily: t.fontBody, padding: "40px 16px", lineHeight: 1.6 }}>
+          <div style={{ fontSize: "24px", marginBottom: "8px" }}>⚠️</div>
+          <div style={{ fontWeight: "700", marginBottom: "6px" }}>Could not load recommendations</div>
+          <div style={{ fontSize: "12px", color: t.textMuted }}>{data.message || "Unknown error"}</div>
+          <button onClick={() => load(level)} style={{ marginTop: "16px", padding: "10px 24px", background: t.accent, color: "#fff", border: "none", borderRadius: t.cardRadius, cursor: "pointer", fontFamily: t.fontBody, fontSize: "13px" }}>Try Again</button>
+        </div>}
       </div>
     </div>
   );
@@ -1086,53 +1202,63 @@ const BottomNav = ({ page, setPage, t, onVibe }) => (
 );
 
 // ===================== HEADER =====================
-const Header = ({ page, t }) => {
-  const titles = { chat: "Chat with Sensei", characters: "Writing Systems", test: "JLPT Practice", explore: "Level Up" };
-  const subtitles = { chat: "Ask anything in any script", characters: "Learn hiragana · katakana · kanji", test: "AI-generated test questions", explore: "Anime · books · movies" };
-  return (
-    <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${t.border}`, background: t.navBg, backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontFamily: t.fontJP, color: "#fff", flexShrink: 0, boxShadow: t.shadow }}>語</div>
-        <div>
-          <div style={{ fontSize: "15px", fontWeight: "700", color: t.text, fontFamily: t.fontDisplay, lineHeight: 1.1 }}>{titles[page]}</div>
-          <div style={{ fontSize: "10px", color: t.textMuted, fontFamily: t.fontBody }}>{subtitles[page]}</div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ===================== APP =====================
 export default function App() {
   const [vibe, setVibe] = useState("minimalist");
   const [page, setPage] = useState("chat");
   const [showVibe, setShowVibe] = useState(false);
+  const [hasKey, setHasKey] = useState(!!localStorage.getItem(KEY_STORAGE));
   const t = THEMES[vibe];
 
-  return (
-    <div style={{
-      height: "100dvh",
-      display: "flex", flexDirection: "column",
-      background: t.bg,
-      width: "100%", maxWidth: "480px",
-      margin: "0 auto",
-      position: "relative",
-    }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Nunito:wght@400;600;700;800&family=Orbitron:wght@400;700;900&family=Kalam:wght@400;700&family=Quicksand:wght@400;500;600;700&display=swap');
-        @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
-        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 2px; }
-        button { transition: opacity 0.15s; cursor: pointer; }
-        button:active { opacity: 0.75; }
-        textarea { resize: none; }
-        /* Safe area insets for iPhone notch / home indicator */
-        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
-      `}</style>
+  const globalStyles = `
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Nunito:wght@400;600;700;800&family=Orbitron:wght@400;700;900&family=Kalam:wght@400;700&family=Quicksand:wght@400;500;600;700&display=swap');
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+    @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 2px; }
+    button { transition: opacity 0.15s; cursor: pointer; }
+    button:active { opacity: 0.75; }
+    textarea { resize: none; }
+    input { box-sizing: border-box; }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  `;
 
-      <Header page={page} t={t} />
+  const shell = (children) => (
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", background: t.bg, width: "100%", maxWidth: "480px", margin: "0 auto", position: "relative" }}>
+      <style>{globalStyles}</style>
+      {children}
+    </div>
+  );
+
+  if (!hasKey) return shell(
+    <SetupScreen t={t} onSave={() => setHasKey(true)} />
+  );
+
+  const resetKey = () => {
+    if (window.confirm("Remove your API key and return to setup?")) {
+      localStorage.removeItem(KEY_STORAGE);
+      setHasKey(false);
+    }
+  };
+
+  return shell(
+    <>
+      {/* Header with key-reset option */}
+      <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${t.border}`, background: t.navBg, backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontFamily: t.fontJP, color: "#fff", flexShrink: 0 }}>語</div>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: "700", color: t.text, fontFamily: t.fontDisplay, lineHeight: 1.1 }}>
+              {{ chat: "Chat with Sensei", characters: "Writing Systems", test: "JLPT Practice", explore: "Level Up" }[page]}
+            </div>
+            <div style={{ fontSize: "10px", color: t.textMuted, fontFamily: t.fontBody }}>
+              {{ chat: "Ask anything in any script", characters: "Learn hiragana · katakana · kanji", test: "AI-generated test questions", explore: "Anime · books · movies" }[page]}
+            </div>
+          </div>
+        </div>
+        <button onClick={resetKey} title="Change API key" style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: "8px", padding: "5px 9px", fontSize: "14px", color: t.textMuted }}>🔑</button>
+      </div>
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         {page === "chat" && <ChatPage t={t} vibe={vibe} />}
@@ -1142,8 +1268,7 @@ export default function App() {
       </div>
 
       <BottomNav page={page} setPage={setPage} t={t} onVibe={() => setShowVibe(true)} />
-
       {showVibe && <VibePicker t={t} vibe={vibe} setVibe={setVibe} onClose={() => setShowVibe(false)} />}
-    </div>
+    </>
   );
 }
